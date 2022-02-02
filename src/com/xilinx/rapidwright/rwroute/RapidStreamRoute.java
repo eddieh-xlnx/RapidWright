@@ -39,6 +39,18 @@ public class RapidStreamRoute extends PartialRouter{
 	public RapidStreamRoute(Design design, RWRouteConfig config) {
 		super(design, config);
 	}
+
+	/**
+	 * Routes a design for the RapidStream flow.
+	 * Note: Added to indicate the parameters for the use case.
+	 * @param design The design instance to route.
+	 * @return The routed design instance.
+	 */
+	public static Design routeDesignRapidStream(Design design) {
+		RWRouteConfig config = new RWRouteConfig(new String[] {"--partialRouting", "--resolveConflictNets", "--useUTurnNodes", "--verbose"});
+		return routeDesign(design, config, () -> new RapidStreamRoute(design, config));
+	}
+
 	/**
 	 * Classifies {@link Net} Objects into different categories: clocks, static nets,
 	 * and regular signal nets (i.e. {@link NetType}.WIRE) and determines routing targets.
