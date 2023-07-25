@@ -2192,8 +2192,6 @@ public class DesignTools {
                         String routeThru = possibleRouteThru.getPinMappingsP2L().keySet().iterator().next();
                         queue.add(source.getBEL().getPin(routeThru));
                     }
-                } else {
-                    return Collections.emptyList();
                 }
             } else { // output
                 for (BELPin sink : curr.getSiteConns()) {
