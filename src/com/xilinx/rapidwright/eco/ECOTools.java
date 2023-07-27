@@ -502,27 +502,37 @@ public class ECOTools {
         if (sitePinName == null) {
             BELPin output = srcCell.getBELPin(targetHierSrc);
             // Unroute single output path of slice
-            // Identify case (O5 blocked, reroute O6 to _O pin, route O5 out MUX output)
-            if (output.getName().equals("O5") && sitePins.size()==1 && sitePins.get(0).endsWith("MUX")) {
+            // Identify case (O5 -> MUX output must be blocked by O6, reroute O6 to _O pin, route O5 out MUX output)
+            if (output.getName().equals("O5") && sitePins.isEmpty()) {
                 char lutID = output.getBELName().charAt(0);
 
                 // Remove OUTMUX SitePIP from O6
                 String rBELName = "OUTMUX" + lutID;
                 SitePIP sitePIP = si.getUsedSitePIP(rBELName);
+                assert(sitePIP.getInputPinName().equals("D6"));
                 // TODO: Use DesignTools.unrouteAlternativeOutputSitePin() instead
                 si.unrouteIntraSiteNet(sitePIP.getInputPin(), sitePIP.getOutputPin());
 
                 // Move source from *MUX -> *_O
                 sitePinName = lutID + "MUX";
                 SitePinInst lut6MuxOutput = si.getSitePinInst(sitePinName);
-                Net lut6Net = lut6MuxOutput.getNet();
-                lut6Net.removePin(lut6MuxOutput, true);
-                si.removePin(lut6MuxOutput);
+                Net lut6Net = null;
+                if (lut6MuxOutput != null) {
+                    lut6Net = lut6MuxOutput.getNet();
+                    lut6Net.removePin(lut6MuxOutput, true);
+                    si.removePin(lut6MuxOutput);
+                } else {
+                    // OUTMUX is configured to be D6 but no SPI exists; ignore
+                }
                 String mainPinName = lutID + "_O";
                 SitePinInst lut6MainOutput = si.getSitePinInst(mainPinName);
                 if (lut6MainOutput != null) {
-                    // lut6Net already using the _O output
-                    assert(lut6MainOutput.getNet().equals(lut6Net));
+                    if (lut6Net == null) {
+                        lut6Net = lut6MainOutput.getNet();
+                    } else {
+                        // lut6Net already using the _O output
+                        assert(lut6MainOutput.getNet().equals(lut6Net));
+                    }
 
                     // Since unrouteIntraSiteNet() above removed the nets on the ?_O (sitePIP
                     // input) and ?MUX (sitePIP output) sitewires, restore the former here
