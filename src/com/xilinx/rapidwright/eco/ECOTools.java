@@ -378,9 +378,16 @@ public class ECOTools {
                                 }
                                 EDIFHierNet otherParentNet = netlist.getParentNet(otherEhpi.getHierarchicalNet());
                                 if (!otherParentNet.equals(parentNet)) {
-                                    System.err.println("WARNING: Site pin " + spi.getSitePinName() + " cannot be used " +
+                                    String message = "Site pin " + spi.getSitePinName() + " cannot be used " +
                                             "to connect to logical pin '" + ehpi + "' since it is also connected to pin '" +
-                                            otherEhpi + "'.");
+                                            otherEhpi + "'.";
+                                    String warnIfCellInstStartsWith = System.getProperty("rapidwright.ecotools.warnIfCellInstStartsWith");
+                                    String cellInstName = (warnIfCellInstStartsWith != null) ? otherEhpi.getPortInst().getCellInst().getName() : null;
+                                    if (cellInstName != null && cellInstName.startsWith(warnIfCellInstStartsWith)) {
+                                        System.err.println("WARNING: " + message);
+                                    } else {
+                                        throw new RuntimeException("ERROR: " + message);
+                                    }
                                 }
                             }
 
