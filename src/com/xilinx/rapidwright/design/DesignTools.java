@@ -1413,12 +1413,19 @@ public class DesignTools {
         cell.getParentCell().removeCellInst(cell.getEDIFCellInst());
     }
 
-    private static void handlePinRemovals(SitePinInst spi, Map<Net,Set<SitePinInst>> deferRemovals) {
-        boolean preserveOtherRoutes = true;
+    /**
+     * Helper method for either removing (and unrouting) a SitePinInst immediately (when deferRemovals is null)
+     * or deferring its removal by putting it into the deferRemovals map.
+     * @param spi SitePinInst object to be removed/unrouted.
+     * @param deferRemovals Optional map for deferring the removal of SitePinInst objects, grouped by their
+     *                      associated Net object.
+     */
+    public static void handlePinRemovals(SitePinInst spi, Map<Net,Set<SitePinInst>> deferRemovals) {
         if (deferRemovals != null) {
             Set<SitePinInst> pins = deferRemovals.computeIfAbsent(spi.getNet(), p -> new HashSet<>());
             pins.add(spi);
         } else {
+            final boolean preserveOtherRoutes = true;
             spi.getNet().removePin(spi, preserveOtherRoutes);
         }
     }
