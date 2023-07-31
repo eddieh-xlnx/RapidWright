@@ -423,11 +423,9 @@ public class ECOTools {
                         }
                     } else {
                         // If source and sink pin happen to be in the same site, try intra-site routing first
-                        if (si.equals(sourceSi)) {
-                            if (si.routeIntraSiteNet(newPhysNet, sourceBELPin, cell.getBELPin(ehpi))) {
-                                // Intra-site routing successful
-                                continue;
-                            }
+                        if (si.equals(sourceSi) && si.routeIntraSiteNet(newPhysNet, sourceBELPin, cell.getBELPin(ehpi))) {
+                            // Intra-site routing successful
+                            continue;
                         }
 
                         // Otherwise create a site-pin so inter-site routing can occur
@@ -459,7 +457,8 @@ public class ECOTools {
      * @return The newly created source site pin
      */
     private static SitePinInst routeOutSitePinInstSource(Design design,
-                                                         EDIFHierPortInst targetHierSrc, Net newPhysNet) {
+                                                         EDIFHierPortInst targetHierSrc,
+                                                         Net newPhysNet) {
         // This net is internal to a site, need to create a site pin and route out to it
         Cell srcCell = design.getCell(targetHierSrc.getFullHierarchicalInstName());
         SiteInst si = srcCell.getSiteInst();
@@ -532,7 +531,17 @@ public class ECOTools {
         return srcPin;
     }
 
-    public static SitePinInst createExitSitePinInst(Design design, EDIFHierPortInst ehpi, Net net) {
+    /**
+     * Creates a new SitePinInst source or sink for the physical net provided.  It will route out an
+     * EDIFHierPortInst input/output pin to a corresponding SitePinInst.
+     * @param design The current design.
+     * @param ehpi The hierarchical pin.
+     * @param net The net to add the new SitePinInst to.
+     * @return The newly created SitePinInst.
+     */
+    public static SitePinInst createExitSitePinInst(Design design,
+                                                    EDIFHierPortInst ehpi,
+                                                    Net net) {
         if (ehpi.isOutput()) {
             return routeOutSitePinInstSource(design, ehpi, net);
         }
