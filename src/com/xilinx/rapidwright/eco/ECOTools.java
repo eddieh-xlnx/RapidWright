@@ -34,12 +34,10 @@ import com.xilinx.rapidwright.device.BELClass;
 import com.xilinx.rapidwright.device.BELPin;
 import com.xilinx.rapidwright.device.SitePIP;
 import com.xilinx.rapidwright.edif.EDIFCell;
-import com.xilinx.rapidwright.edif.EDIFHierCellInst;
 import com.xilinx.rapidwright.edif.EDIFHierNet;
 import com.xilinx.rapidwright.edif.EDIFHierPortInst;
 import com.xilinx.rapidwright.edif.EDIFNet;
 import com.xilinx.rapidwright.edif.EDIFNetlist;
-import com.xilinx.rapidwright.edif.EDIFPort;
 import com.xilinx.rapidwright.edif.EDIFPortInst;
 import com.xilinx.rapidwright.edif.EDIFTools;
 import com.xilinx.rapidwright.rwroute.RouterHelper;
@@ -48,7 +46,6 @@ import com.xilinx.rapidwright.util.Pair;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -58,99 +55,77 @@ import java.util.Map;
 import java.util.Set;
 
 public class ECOTools {
-    public static void disconnectNet(Design design, List<String> pinlist, Map<Net, Set<SitePinInst>> deferredRemovals) {
+    public static void disconnectNet(Design design, List<EDIFHierPortInst> pins, Map<Net, Set<SitePinInst>> deferredRemovals) {
         final EDIFNetlist netlist = design.getNetlist();
         final Map<EDIFNet, List<EDIFPortInst>> netPortInsts = new HashMap<>();
-        for (String pins : pinlist) {
-            for (String pin : pins.split(" ")) {
-                EDIFHierPortInst ehpi = netlist.getHierPortInstFromName(pin);
-                if (ehpi == null) {
-                    int pos = pin.lastIndexOf(EDIFTools.EDIF_HIER_SEP);
-                    String path = pin.substring(0, pos);
-                    EDIFHierCellInst ehci = netlist.getHierCellInstFromName(path);
-                    if (ehci == null) {
-                        throw new RuntimeException("Unable to find inst '" + path + "' corresponding to pin '" + pin + "'");
-                    }
-                    String name = pin.substring(pos + 1);
-                    EDIFPort ep = ehci.getCellType().getPort(name);
-                    if (ep == null) {
-                        throw new RuntimeException("Unable to find port '" + name + "' on inst '" + path + "' corresponding to pin '" + pin + "'");
-                    }
-
-                    // Cell inst exists, as does the port on its cell type, but port inst
-                    // does not because it is not connected to anything. Nothing to be done.
-                    continue;
-                }
-                EDIFHierNet ehn = ehpi.getHierarchicalNet();
-                if (ehn == null) throw new RuntimeException(pin);
-
-                List<EDIFHierPortInst> leafPortInsts;
-                EDIFHierNet internalEhn = ehpi.getInternalNet();
-                if (internalEhn == null) {
-                    // Pin does not have an internal net (the net on the other side
-                    // of the port, inside the cell)
-                    EDIFCell ec = ehpi.getCellType();
-                    if (ec.isLeafCellOrBlackBox()) {
-                        // Pin is a leaf cell
-                        if (ehpi.isInput()) {
-                            // Input leaf port, meaning that this is the only pin affected
-                            leafPortInsts = Collections.singletonList(ehpi);
-                        } else {
-                            // Output leaf port, thus all sinks are affected
-                            assert (ehpi.isOutput());
-                            leafPortInsts = ehn.getLeafHierPortInsts(true);
-                        }
+        for (EDIFHierPortInst ehpi : pins) {
+            EDIFHierNet ehn = ehpi.getHierarchicalNet();
+            List<EDIFHierPortInst> leafPortInsts;
+            EDIFHierNet internalEhn = ehpi.getInternalNet();
+            if (internalEhn == null) {
+                // Pin does not have an internal net (the net on the other side
+                // of the port, inside the cell)
+                EDIFCell ec = ehpi.getCellType();
+                if (ec.isLeafCellOrBlackBox()) {
+                    // Pin is a leaf cell
+                    if (ehpi.isInput()) {
+                        // Input leaf port, meaning that this is the only pin affected
+                        leafPortInsts = Collections.singletonList(ehpi);
                     } else {
-                        // Pin must be unconnected (thus cannot have any leaf ports)
-                        leafPortInsts = Collections.emptyList();
+                        // Output leaf port, thus all sinks are affected
+                        assert (ehpi.isOutput());
+                        leafPortInsts = ehn.getLeafHierPortInsts(true);
                     }
                 } else {
-                    // Not a leaf pin
+                    // Pin must be unconnected (thus cannot have any leaf ports)
+                    leafPortInsts = Collections.emptyList();
+                }
+            } else {
+                // Not a leaf pin
 
-                    // Check downstream
-                    Set<EDIFHierNet> visitedNets = new HashSet<>();
-                    visitedNets.add(ehn);
+                // Check downstream
+                Set<EDIFHierNet> visitedNets = new HashSet<>();
+                visitedNets.add(ehn);
 
-                    leafPortInsts = internalEhn.getLeafHierPortInsts(true, visitedNets);
+                leafPortInsts = internalEhn.getLeafHierPortInsts(true, visitedNets);
 
-                    if (ehpi.isInput()) {
-                        // Pin is an input, cannot contain a source, remove all downstream sinks
+                if (ehpi.isInput()) {
+                    // Pin is an input, cannot contain a source, remove all downstream sinks
+                } else {
+                    // Pin is an output or inout, check if downstream contains a source
+                    boolean sourcePresent = false;
+                    for (EDIFHierPortInst leafPortInst : leafPortInsts) {
+                        if (leafPortInst.isOutput()) {
+                            sourcePresent = true;
+                            break;
+                        }
+                    }
+
+                    if (sourcePresent) {
+                        // Downstream does contains a source, remove everything upstream instead
+                        visitedNets.clear();
+                        visitedNets.add(internalEhn);
+                        leafPortInsts = ehn.getLeafHierPortInsts(false, visitedNets);
                     } else {
-                        // Pin is an output or inout, check if downstream contains a source
-                        boolean sourcePresent = false;
-                        for (EDIFHierPortInst leafPortInst : leafPortInsts) {
-                            if (leafPortInst.isOutput()) {
-                                sourcePresent = true;
-                                break;
-                            }
-                        }
-
-                        if (sourcePresent) {
-                            // Downstream does contains a source, remove everything upstream instead
-                            visitedNets.clear();
-                            visitedNets.add(internalEhn);
-                            leafPortInsts = ehn.getLeafHierPortInsts(false, visitedNets);
-                        } else {
-                            // Downstream contains only sinks, remove them all
-                        }
+                        // Downstream contains only sinks, remove them all
                     }
                 }
-
-                // Remove all affected SitePinInsts
-                for (EDIFHierPortInst leafEhpi : leafPortInsts) {
-                    // Do nothing if we're disconnecting an input, but this leaf pin is not an input
-                    if (ehpi.isInput() && !leafEhpi.isInput())
-                        continue;
-
-                    Cell cell = leafEhpi.getPhysicalCell(design);
-                    for (SitePinInst spi : cell.getAllSitePinsFromLogicalPin(leafEhpi.getPortInst().getName(), null)) {
-                        deferredRemovals.computeIfAbsent(spi.getNet(), (p) -> new HashSet<>()).add(spi);
-                    }
-                }
-
-                EDIFNet en = ehn.getNet();
-                netPortInsts.computeIfAbsent(en, (n) -> new ArrayList<>()).add(ehpi.getPortInst());
             }
+
+            // Remove all affected SitePinInsts
+            for (EDIFHierPortInst leafEhpi : leafPortInsts) {
+                // Do nothing if we're disconnecting an input, but this leaf pin is not an input
+                if (ehpi.isInput() && !leafEhpi.isInput())
+                    continue;
+
+                Cell cell = leafEhpi.getPhysicalCell(design);
+                for (SitePinInst spi : cell.getAllSitePinsFromLogicalPin(leafEhpi.getPortInst().getName(), null)) {
+                    deferredRemovals.computeIfAbsent(spi.getNet(), (p) -> new HashSet<>()).add(spi);
+                }
+            }
+
+            EDIFNet en = ehn.getNet();
+            netPortInsts.computeIfAbsent(en, (n) -> new ArrayList<>()).add(ehpi.getPortInst());
         }
 
         for (Map.Entry<EDIFNet, List<EDIFPortInst>> e : netPortInsts.entrySet()) {
@@ -163,46 +138,12 @@ public class ECOTools {
         }
     }
 
-    public static void connectNet(Design design, List<String> net_object_list, Map<Net, Set<SitePinInst>> deferredRemovals, CodePerfTracker t) {
+    public static void connectNet(Design design, Map<EDIFHierNet, List<EDIFHierPortInst>> netPortInsts, Map<Net, Set<SitePinInst>> deferredRemovals) {
+        connectNet(design, netPortInsts, deferredRemovals, CodePerfTracker.SILENT);
+    }
+
+    public static void connectNet(Design design, Map<EDIFHierNet, List<EDIFHierPortInst>> netPortInsts, Map<Net, Set<SitePinInst>> deferredRemovals, CodePerfTracker t) {
         final EDIFNetlist netlist = design.getNetlist();
-        final Map<EDIFHierNet, List<EDIFHierPortInst>> netPortInsts = new HashMap<>(net_object_list.size());
-        for (String i : net_object_list) {
-            String[] net_pins = i.split(" ", 2);
-            String net = net_pins[0];
-            if (net.isEmpty()) {
-                System.err.println("WARNING: Empty net specified for connection to pins: " + net_pins[1]);
-                continue;
-            }
-            EDIFHierNet ehn = netlist.getHierNetFromName(net);
-            if (ehn == null) throw new RuntimeException(net);
-
-            String[] pins = net_pins[1].split("[{} ]+");
-            Collection<EDIFHierPortInst> portInsts = netPortInsts.computeIfAbsent(ehn, (n) -> new ArrayList<>(pins.length));
-            for (String pin : pins) {
-                if (pin.isEmpty())
-                    continue;
-                EDIFHierPortInst ehpi = netlist.getHierPortInstFromName(pin);
-                if (ehpi == null) {
-                    // No HierPortInst exists -- attach one to the port and net,
-                    // creating a net if necessary
-                    int pos = pin.lastIndexOf(EDIFTools.EDIF_HIER_SEP);
-                    String path = pin.substring(0, pos);
-                    String name = pin.substring(pos+1);
-                    EDIFHierCellInst ehci = netlist.getHierCellInstFromName(path);
-                    if (ehci == null) throw new RuntimeException(pin);
-                    EDIFCell cell = ehci.getCellType();
-                    EDIFPort ep = cell.getPort(name);
-                    if (ep == null) throw new RuntimeException(pin);
-                    // Create and attach port inst here because port insts need (CHECK!!)
-                    // to be attached to a net, so don't do it below
-                    // EDIFPortInst epi = en.createPortInst(ep, ehci.getInst());
-                    EDIFPortInst epi = new EDIFPortInst(ep, null, ehci.getInst());
-                    ehpi = new EDIFHierPortInst(ehci.getParent(), epi);
-                }
-                portInsts.add(ehpi);
-            }
-        }
-
         for (Map.Entry<EDIFHierNet,List<EDIFHierPortInst>> e : netPortInsts.entrySet()) {
             EDIFHierNet ehn = e.getKey();
             EDIFNet en = ehn.getNet();
