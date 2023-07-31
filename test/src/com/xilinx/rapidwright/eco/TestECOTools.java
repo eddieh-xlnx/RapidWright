@@ -31,6 +31,7 @@ import com.xilinx.rapidwright.edif.EDIFNet;
 import com.xilinx.rapidwright.edif.EDIFNetlist;
 import com.xilinx.rapidwright.edif.EDIFPortInst;
 import com.xilinx.rapidwright.support.RapidWrightDCP;
+import com.xilinx.rapidwright.util.FileTools;
 import com.xilinx.rapidwright.util.ReportRouteStatusResult;
 import com.xilinx.rapidwright.util.VivadoTools;
 import org.junit.jupiter.api.Assertions;
@@ -182,7 +183,7 @@ public class TestECOTools {
         ECOTools.disconnectNet(design, disconnectPins, deferredRemovals);
         Assertions.assertEquals(14, deferredRemovals.size());
 
-        // Re-connect them to some other nets
+        // Re-connect those inputs to some other nets
         final Map<EDIFHierNet, List<EDIFHierPortInst>> netPortInsts = new HashMap<>();
         for (int i = 0; i < 14; i++) {
             int busIdx = (74 + i);
@@ -193,8 +194,10 @@ public class TestECOTools {
         ECOTools.connectNet(design, netPortInsts, deferredRemovals);
         Assertions.assertEquals(0, deferredRemovals.size());
 
-        // Check that Vivado shows 14 unrouted nets
-        ReportRouteStatusResult rrs = VivadoTools.reportRouteStatus(design);
-        Assertions.assertEquals(14, rrs.netsWithRoutingErrors);
+        if (FileTools.isVivadoOnPath()) {
+            // Check that Vivado shows 14 unrouted nets
+            ReportRouteStatusResult rrs = VivadoTools.reportRouteStatus(design);
+            Assertions.assertEquals(14, rrs.netsWithRoutingErrors);
+        }
     }
 }
