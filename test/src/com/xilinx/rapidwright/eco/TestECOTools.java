@@ -25,16 +25,21 @@ package com.xilinx.rapidwright.eco;
 import com.xilinx.rapidwright.design.Design;
 import com.xilinx.rapidwright.design.Net;
 import com.xilinx.rapidwright.design.SitePinInst;
+import com.xilinx.rapidwright.edif.EDIFHierNet;
 import com.xilinx.rapidwright.edif.EDIFHierPortInst;
 import com.xilinx.rapidwright.edif.EDIFNet;
 import com.xilinx.rapidwright.edif.EDIFNetlist;
 import com.xilinx.rapidwright.edif.EDIFPortInst;
 import com.xilinx.rapidwright.support.RapidWrightDCP;
+import com.xilinx.rapidwright.util.ReportRouteStatusResult;
+import com.xilinx.rapidwright.util.VivadoTools;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -54,7 +59,7 @@ public class TestECOTools {
             int portInstsBefore = en.getPortInsts().size();
             Assertions.assertTrue(en.getPortInsts().contains(epi));
 
-            ECOTools.disconnectNet(design, Collections.singletonList(ehpi.toString()), deferredRemovals);
+            ECOTools.disconnectNet(design, Collections.singletonList(ehpi), deferredRemovals);
             Assertions.assertFalse(en.getPortInsts().contains(epi));
             Assertions.assertEquals(portInstsBefore - 1, en.getPortInsts().size());
 
@@ -70,7 +75,7 @@ public class TestECOTools {
             int portInstsBefore = en.getPortInsts().size();
             Assertions.assertTrue(en.getPortInsts().contains(ehpi.getPortInst()));
 
-            ECOTools.disconnectNet(design, Collections.singletonList(ehpi.toString()), deferredRemovals);
+            ECOTools.disconnectNet(design, Collections.singletonList(ehpi), deferredRemovals);
             Assertions.assertFalse(en.getPortInsts().contains(ehpi.getPortInst()));
             Assertions.assertEquals(portInstsBefore - 1, en.getPortInsts().size());
 
@@ -86,7 +91,7 @@ public class TestECOTools {
             int portInstsBefore = en.getPortInsts().size();
             Assertions.assertTrue(en.getPortInsts().contains(ehpi.getPortInst()));
 
-            ECOTools.disconnectNet(design, Collections.singletonList(ehpi.toString()), deferredRemovals);
+            ECOTools.disconnectNet(design, Collections.singletonList(ehpi), deferredRemovals);
             Assertions.assertFalse(en.getPortInsts().contains(ehpi.getPortInst()));
             Assertions.assertEquals(portInstsBefore - 1, en.getPortInsts().size());
 
@@ -102,7 +107,7 @@ public class TestECOTools {
             int portInstsBefore = en.getPortInsts().size();
             Assertions.assertTrue(en.getPortInsts().contains(ehpi.getPortInst()));
 
-            ECOTools.disconnectNet(design, Collections.singletonList(ehpi.toString()), deferredRemovals);
+            ECOTools.disconnectNet(design, Collections.singletonList(ehpi), deferredRemovals);
             Assertions.assertFalse(en.getPortInsts().contains(ehpi.getPortInst()));
             Assertions.assertEquals(portInstsBefore - 1, en.getPortInsts().size());
 
@@ -119,7 +124,7 @@ public class TestECOTools {
             int portInstsBefore = en.getPortInsts().size();
             Assertions.assertTrue(en.getPortInsts().contains(ehpi.getPortInst()));
 
-            ECOTools.disconnectNet(design, Collections.singletonList(ehpi.toString()), deferredRemovals);
+            ECOTools.disconnectNet(design, Collections.singletonList(ehpi), deferredRemovals);
             Assertions.assertFalse(en.getPortInsts().contains(ehpi.getPortInst()));
             Assertions.assertEquals(portInstsBefore - 1, en.getPortInsts().size());
 
@@ -135,7 +140,7 @@ public class TestECOTools {
             int portInstsBefore = en.getPortInsts().size();
             Assertions.assertTrue(en.getPortInsts().contains(ehpi.getPortInst()));
 
-            ECOTools.disconnectNet(design, Collections.singletonList(ehpi.toString()), deferredRemovals);
+            ECOTools.disconnectNet(design, Collections.singletonList(ehpi), deferredRemovals);
             Assertions.assertFalse(en.getPortInsts().contains(ehpi.getPortInst()));
             Assertions.assertEquals(portInstsBefore - 1, en.getPortInsts().size());
 
@@ -152,12 +157,44 @@ public class TestECOTools {
             int portInstsBefore = en.getPortInsts().size();
             Assertions.assertTrue(en.getPortInsts().contains(ehpi.getPortInst()));
 
-            ECOTools.disconnectNet(design, Collections.singletonList(ehpi.toString()), deferredRemovals);
+            ECOTools.disconnectNet(design, Collections.singletonList(ehpi), deferredRemovals);
             Assertions.assertFalse(en.getPortInsts().contains(ehpi.getPortInst()));
             Assertions.assertEquals(portInstsBefore - 1, en.getPortInsts().size());
 
             Assertions.assertEquals("[IN SLICE_X13Y237.G1]", deferredRemovals.get(net).toString());
         }
         deferredRemovals.clear();
+    }
+
+    @Test
+    public void testConnectNet() {
+        Design design = RapidWrightDCP.loadDCP("microblazeAndILA_3pblocks.dcp");
+        EDIFNetlist netlist = design.getNetlist();
+        Map<Net, Set<SitePinInst>> deferredRemovals = new HashMap<>();
+
+        // Disconnect the ILA inputs
+        List<EDIFHierPortInst> disconnectPins = new ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            EDIFHierPortInst ehpi = netlist.getHierPortInstFromName("u_ila_0/probe0[" + i + "]");
+            Assertions.assertNotNull(ehpi);
+            disconnectPins.add(ehpi);
+        }
+        ECOTools.disconnectNet(design, disconnectPins, deferredRemovals);
+        Assertions.assertEquals(14, deferredRemovals.size());
+
+        // Re-connect them to some other nets
+        final Map<EDIFHierNet, List<EDIFHierPortInst>> netPortInsts = new HashMap<>();
+        for (int i = 0; i < 14; i++) {
+            int busIdx = (74 + i);
+            EDIFHierNet ehn = netlist.getHierNetFromName("base_mb_i/microblaze_0/U0/MicroBlaze_Core_I/Performance.Core/Data_Flow_I/Data_Addr[0][" + busIdx + "]");
+            EDIFHierPortInst ehpi = disconnectPins.get(i);
+            netPortInsts.put(ehn, Collections.singletonList(ehpi));
+        }
+        ECOTools.connectNet(design, netPortInsts, deferredRemovals);
+        Assertions.assertEquals(0, deferredRemovals.size());
+
+        // Check that Vivado shows 14 unrouted nets
+        ReportRouteStatusResult rrs = VivadoTools.reportRouteStatus(design);
+        Assertions.assertEquals(14, rrs.netsWithRoutingErrors);
     }
 }
