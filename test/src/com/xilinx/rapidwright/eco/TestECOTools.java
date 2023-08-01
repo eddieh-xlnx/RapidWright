@@ -34,6 +34,7 @@ import com.xilinx.rapidwright.support.RapidWrightDCP;
 import com.xilinx.rapidwright.util.FileTools;
 import com.xilinx.rapidwright.util.ReportRouteStatusResult;
 import com.xilinx.rapidwright.util.VivadoTools;
+import org.apache.commons.collections4.CollectionUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -184,15 +185,30 @@ public class TestECOTools {
         Assertions.assertEquals(14, deferredRemovals.size());
 
         // Re-connect those inputs to some other nets
-        final Map<EDIFHierNet, List<EDIFHierPortInst>> netPortInsts = new HashMap<>();
+        final Map<EDIFHierNet, List<EDIFHierPortInst>> netToPortInsts = new HashMap<>();
         for (int i = 0; i < 14; i++) {
             int busIdx = (74 + i);
             EDIFHierNet ehn = netlist.getHierNetFromName("base_mb_i/microblaze_0/U0/MicroBlaze_Core_I/Performance.Core/Data_Flow_I/Data_Addr[0][" + busIdx + "]");
             EDIFHierPortInst ehpi = disconnectPins.get(i);
-            netPortInsts.put(ehn, Collections.singletonList(ehpi));
+
+            // Check that leaves of net and pin are disjoint
+            List<EDIFHierPortInst> ehpiLeaves = ehpi.getInternalNet().getLeafHierPortInsts(false, true);
+            Assertions.assertFalse(ehn.getLeafHierPortInsts(false, true).stream().anyMatch(ehpiLeaves::contains));
+
+            netToPortInsts.put(ehn, Collections.singletonList(ehpi));
         }
-        ECOTools.connectNet(design, netPortInsts, deferredRemovals);
+        ECOTools.connectNet(design, netToPortInsts, deferredRemovals);
         Assertions.assertEquals(0, deferredRemovals.size());
+
+        // Check that leaves of net and pin are one and the same now
+        for (Map.Entry<EDIFHierNet, List<EDIFHierPortInst>> e : netToPortInsts.entrySet()) {
+            EDIFHierNet ehn = e.getKey();
+            List<EDIFHierPortInst> ehnLeaves = ehn.getLeafHierPortInsts(false, true);
+            for (EDIFHierPortInst ehpi : e.getValue()) {
+                List<EDIFHierPortInst> ehpiLeaves = ehpi.getInternalNet().getLeafHierPortInsts(false, true);
+                CollectionUtils.isEqualCollection(ehnLeaves, ehpiLeaves);
+            }
+        }
 
         if (FileTools.isVivadoOnPath()) {
             // Check that Vivado shows 14 unrouted nets
