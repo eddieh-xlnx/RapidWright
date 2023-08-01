@@ -25,6 +25,7 @@ package com.xilinx.rapidwright.eco;
 import com.xilinx.rapidwright.design.Design;
 import com.xilinx.rapidwright.design.Net;
 import com.xilinx.rapidwright.design.SitePinInst;
+import com.xilinx.rapidwright.edif.EDIFHierCellInst;
 import com.xilinx.rapidwright.edif.EDIFHierNet;
 import com.xilinx.rapidwright.edif.EDIFHierPortInst;
 import com.xilinx.rapidwright.edif.EDIFNet;
@@ -214,6 +215,35 @@ public class TestECOTools {
             // Check that Vivado shows 14 unrouted nets
             ReportRouteStatusResult rrs = VivadoTools.reportRouteStatus(design);
             Assertions.assertEquals(14, rrs.netsWithRoutingErrors);
+        }
+    }
+
+    @Test
+    public void testRemoveCell() {
+        Design design = RapidWrightDCP.loadDCP("microblazeAndILA_3pblocks.dcp");
+        EDIFNetlist netlist = design.getNetlist();
+        Map<Net, Set<SitePinInst>> deferredRemovals = new HashMap<>();
+
+        EDIFHierCellInst ehciToDelete = netlist.getHierCellInstFromName("base_mb_i/microblaze_0/U0/MicroBlaze_Core_I/Performance.Core/Data_Flow_I/Register_File_I");
+        List<EDIFHierCellInst> leavesToDelete = netlist.getAllLeafDescendants(ehciToDelete);
+
+        ECOTools.removeCell(design, Collections.singletonList(ehciToDelete), deferredRemovals);
+
+        for (EDIFHierCellInst ehci : leavesToDelete) {
+            String instName = ehci.getFullHierarchicalInstName();
+            // Logical leaf cell not present
+            Assertions.assertNull(netlist.getHierCellInstFromName(instName));
+            // Physical cell not present
+            Assertions.assertNull(design.getCell(instName));
+        }
+
+        // Logical hierarchical cell not present
+        Assertions.assertNull(netlist.getHierCellInstFromName(ehciToDelete.getFullHierarchicalInstName()));
+
+        if (FileTools.isVivadoOnPath()) {
+            // Check that Vivado shows 14 unrouted nets
+            ReportRouteStatusResult rrs = VivadoTools.reportRouteStatus(design);
+            Assertions.assertEquals(851, rrs.netsWithRoutingErrors);
         }
     }
 }

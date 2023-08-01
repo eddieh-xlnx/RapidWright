@@ -34,6 +34,8 @@ import com.xilinx.rapidwright.device.BELClass;
 import com.xilinx.rapidwright.device.BELPin;
 import com.xilinx.rapidwright.device.SitePIP;
 import com.xilinx.rapidwright.edif.EDIFCell;
+import com.xilinx.rapidwright.edif.EDIFCellInst;
+import com.xilinx.rapidwright.edif.EDIFHierCellInst;
 import com.xilinx.rapidwright.edif.EDIFHierNet;
 import com.xilinx.rapidwright.edif.EDIFHierPortInst;
 import com.xilinx.rapidwright.edif.EDIFNet;
@@ -52,6 +54,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * A collection of methods for performing ECO operations.
+ *
+ * NOTE: These methods assume the EDIF (logical) netlist is unfolded.
+ *
+ *       A folded netlist containing two instances of the 'foo' cell with instances
+ *       names 'u1' and 'u2' would have the following hierarchy: 'top/u1(foo)' and
+ *       'top/u2(foo)'. Further, assume that 'foo' contains two leaf cell instances
+ *       'lut1' and 'lut2' for a total of four leaf cells in the netlist.
+ *
+ *       Modifying (e.g. connecting, disconnecting, removing, etc.) instance
+ *       'top/u1(foo)/lut1' would cause the 'lut1' instance from cell 'foo' to be
+ *       modified, which would have the un-obvious effect of also modifying
+ *       'top/u2(foo)/lut1' from the netlist too.
+ *       With an unfolded netlist, the 'foo' cell would be expected to be replaced
+ *       by two (identical) cells 'foo1' and 'foo2', each instantiated once. Here,
+ *       modifying 'top/u1(foo1)/lut1' would no longer affect 'top/u2(foo2)/lut1'.
+ */
 public class ECOTools {
     /**
      * Given a list of EDIFHierPortInst objects, disconnect these pins from their current nets.
@@ -616,6 +636,47 @@ public class ECOTools {
             net.removePin(spi);
             si.removePin(spi);
             spi.setSiteInst(null);
+        }
+    }
+
+    /**
+     * Given a list of EDIFHierCellInst objects, remove these cells from the design.
+     * This method removes and disconnects cells from the EDIF (logical) netlist
+     * as well as the place-and-route (physical) state, and is modelled on Vivado's
+     * <TT>remove_cell</TT> command.
+     * @param design The current design.
+     * @param cells A list of hierarchical cell instances for removal.
+     * @param deferredRemovals An optional map that, if passed in non-null will be populated with
+     *                         site pins marked for removal.  The map allows for persistent tracking
+     *                         if this method is called many times as the process is expensive
+     *                         without batching.
+     */
+    public static void removeCell(Design design,
+                                  List<EDIFHierCellInst> cells,
+                                  Map<Net, Set<SitePinInst>> deferredRemovals) {
+        final EDIFNetlist netlist = design.getNetlist();
+        for (EDIFHierCellInst ehci : cells) {
+            // Disconnect hierarchical cell from connected nets
+            EDIFCellInst eci = ehci.getInst();
+            for (EDIFPortInst ehpi : eci.getPortInsts()) {
+                ehpi.getNet().removePortInst(ehpi);
+            }
+
+            // Remove all leaf cells from physical design
+            for (EDIFHierCellInst leafEhci : netlist.getAllLeafDescendants(ehci)) {
+                Cell physCell = design.getCell(leafEhci.getFullHierarchicalInstName());
+                if (physCell == null) {
+                    throw new RuntimeException("ERROR: Cannot find physical cell corresponding to logical cell '" +
+                            leafEhci.getFullHierarchicalInstName() + "'.");
+                }
+                DesignTools.fullyRemoveCell(design, physCell, deferredRemovals);
+            }
+
+            if (!eci.getCellType().isLeafCellOrBlackBox()) {
+                // Remove cell instance from parent cell
+                EDIFCell parentCell = ehci.getParent().getCellType();
+                parentCell.removeCellInst(eci);
+            }
         }
     }
 }
