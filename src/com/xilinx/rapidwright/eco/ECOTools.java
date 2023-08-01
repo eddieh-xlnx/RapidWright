@@ -664,6 +664,10 @@ public class ECOTools {
 
             // Remove all leaf cells from physical design
             for (EDIFHierCellInst leafEhci : netlist.getAllLeafDescendants(ehci)) {
+                String cellName = leafEhci.getCellName();
+                if (cellName.equals("GND") || cellName.equals("VCC")) {
+                    continue;
+                }
                 Cell physCell = design.getCell(leafEhci.getFullHierarchicalInstName());
                 if (physCell == null) {
                     throw new RuntimeException("ERROR: Cannot find physical cell corresponding to logical cell '" +
