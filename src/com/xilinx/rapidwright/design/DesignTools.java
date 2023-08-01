@@ -3904,6 +3904,10 @@ public class DesignTools {
      * @param net Net on which pins are to be updated.
      */
     public static void updatePinsIsRouted(Net net) {
+        if (!net.hasPIPs()) {
+            return;
+        }
+
         Queue<Node> queue = new ArrayDeque<>();
         Map<Node, List<Node>> node2fanout = new HashMap<>();
         Map<Node, Set<Node>> bidirNode2nodes = new HashMap<>();
@@ -3955,6 +3959,17 @@ public class DesignTools {
                     queue.add(fanout);
                 }
             }
+        }
+    }
+
+    /**
+     * Update the SitePinInst.isRouted() value of all sink pins in the given
+     * Design. See {@link #updatePinsIsRouted(Net)}.
+     * @param design Design in which pins are to be updated.
+     */
+    public static void updatePinsIsRouted(Design design) {
+        for (Net net : design.getNets()) {
+            updatePinsIsRouted(net);
         }
     }
 }
