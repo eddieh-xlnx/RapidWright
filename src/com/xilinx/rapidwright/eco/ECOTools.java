@@ -683,4 +683,40 @@ public class ECOTools {
             }
         }
     }
+
+    /**
+     * Given a EDIFCell object and a list of instance paths, create these cell instantiations
+     * in the design.
+     * This method inserts cells in the EDIF (logical) netlist as well as corresponding leaf cells
+     * into the physical state (unplaced), and is modelled on Vivado's <TT>create_cell</TT> command.
+     * @param design The current design.
+     * @param reference The cell to be instantiated.
+     * @param paths A list of instance paths for creation.
+     */
+    public static void createCell(Design design,
+                                  EDIFCell reference,
+                                  List<String> paths)
+    {
+        final EDIFNetlist netlist = design.getNetlist();
+        for (String path : paths) {
+            // Modify logical netlist
+            int pos = path.lastIndexOf(EDIFTools.EDIF_HIER_SEP);
+            String name = path.substring(pos+1);
+            EDIFHierCellInst parentEhci;
+            if (pos == -1) {
+                parentEhci = netlist.getTopHierCellInst();
+            } else {
+                String parentPath = path.substring(0, pos);
+                parentEhci = netlist.getHierCellInstFromName(parentPath);
+            }
+            EDIFCell parentCell = parentEhci.getCellType();
+            EDIFCellInst eci = parentCell.createChildCellInst(name, reference);
+
+            EDIFHierCellInst ehci = parentEhci.getChild(eci);
+            // Modify physical netlist
+            for (EDIFHierCellInst leaf : netlist.getAllLeafDescendants(ehci)) {
+                design.createCell(leaf.getFullHierarchicalInstName(), leaf.getInst());
+            }
+        }
+    }
 }
