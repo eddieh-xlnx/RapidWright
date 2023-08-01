@@ -34,6 +34,7 @@ import com.xilinx.rapidwright.edif.EDIFHierPortInst;
 import com.xilinx.rapidwright.edif.EDIFNet;
 import com.xilinx.rapidwright.edif.EDIFNetlist;
 import com.xilinx.rapidwright.edif.EDIFPortInst;
+import com.xilinx.rapidwright.edif.EDIFTools;
 import com.xilinx.rapidwright.support.RapidWrightDCP;
 import com.xilinx.rapidwright.util.FileTools;
 import com.xilinx.rapidwright.util.ReportRouteStatusResult;
@@ -337,6 +338,26 @@ public class TestECOTools {
             Assertions.assertEquals(728, rrs.netsWithNoPlacedPins);
             Assertions.assertEquals(2, rrs.netsWithRoutingErrors);
             Assertions.assertEquals(2, rrs.netsWithSomeUnplacedPins);
+        }
+    }
+
+    @Test
+    public void testCreateNet() {
+        Design design = RapidWrightDCP.loadDCP("picoblaze_ooc_X10Y235.dcp");
+        EDIFNetlist netlist = design.getNetlist();
+
+        DesignTools.updatePinsIsRouted(design);
+
+        List<String> netNames = Arrays.asList("processor/foo", "your_program/bar");
+        ECOTools.createNet(design, netNames);
+
+        for (String netName : netNames) {
+            // Logical net is present
+            EDIFHierNet ehn = netlist.getHierNetFromName(netName);
+            Assertions.assertNotNull(ehn);
+
+            // Physical nets are also present
+            Assertions.assertNotNull(design.getNet(netName));
         }
     }
 }

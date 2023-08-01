@@ -684,6 +684,23 @@ public class ECOTools {
         }
     }
 
+    private static Pair<EDIFHierCellInst,String> getParentCellInstAndName(EDIFNetlist netlist, String path)
+    {
+        int pos = path.lastIndexOf(EDIFTools.EDIF_HIER_SEP);
+        String name = path.substring(pos+1);
+        EDIFHierCellInst parentEhci;
+        if (pos == -1) {
+            parentEhci = netlist.getTopHierCellInst();
+        } else {
+            String parentPath = path.substring(0, pos);
+            parentEhci = netlist.getHierCellInstFromName(parentPath);
+        }
+        if (parentEhci == null) {
+            throw new RuntimeException("ERROR: Cannot find parent cell in path '" + path + "'.");
+        }
+        return new Pair<>(parentEhci, name);
+    }
+
     /**
      * Given a EDIFCell object and a list of instance paths, create these cell instantiations
      * in the design.
@@ -700,23 +717,41 @@ public class ECOTools {
         final EDIFNetlist netlist = design.getNetlist();
         for (String path : paths) {
             // Modify logical netlist
-            int pos = path.lastIndexOf(EDIFTools.EDIF_HIER_SEP);
-            String name = path.substring(pos+1);
-            EDIFHierCellInst parentEhci;
-            if (pos == -1) {
-                parentEhci = netlist.getTopHierCellInst();
-            } else {
-                String parentPath = path.substring(0, pos);
-                parentEhci = netlist.getHierCellInstFromName(parentPath);
-            }
+            Pair<EDIFHierCellInst,String> p = getParentCellInstAndName(netlist, path);
+            EDIFHierCellInst parentEhci = p.getFirst();
             EDIFCell parentCell = parentEhci.getCellType();
-            EDIFCellInst eci = parentCell.createChildCellInst(name, reference);
+            String cellName = p.getSecond();
+            EDIFCellInst eci = parentCell.createChildCellInst(cellName, reference);
 
-            EDIFHierCellInst ehci = parentEhci.getChild(eci);
             // Modify physical netlist
+            EDIFHierCellInst ehci = parentEhci.getChild(eci);
             for (EDIFHierCellInst leaf : netlist.getAllLeafDescendants(ehci)) {
                 design.createCell(leaf.getFullHierarchicalInstName(), leaf.getInst());
             }
+        }
+    }
+
+    /**
+     * Given list of net paths, create these nets in the design.
+     * This method inserts nets into the EDIF (logical) netlist as well as corresponding nets
+     * into the physical state (unplaced), and is modelled on Vivado's <TT>create_net</TT> command.
+     * @param design The current design.
+     * @param paths A list of net paths for creation.
+     */
+    public static void createNet(Design design,
+                                 List<String> paths)
+    {
+        final EDIFNetlist netlist = design.getNetlist();
+        for (String path : paths) {
+            // Modify logical netlist
+            Pair<EDIFHierCellInst,String> p = getParentCellInstAndName(netlist, path);
+            EDIFHierCellInst parentEhci = p.getFirst();
+            EDIFCell parentCell = parentEhci.getCellType();
+            String netName = p.getSecond();
+            parentCell.createNet(netName);
+
+            // Modify physical netlist
+            design.createNet(path);
         }
     }
 }
