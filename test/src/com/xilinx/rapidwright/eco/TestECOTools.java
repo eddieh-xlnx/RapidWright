@@ -23,6 +23,7 @@
 package com.xilinx.rapidwright.eco;
 
 import com.xilinx.rapidwright.design.Design;
+import com.xilinx.rapidwright.design.DesignTools;
 import com.xilinx.rapidwright.design.Net;
 import com.xilinx.rapidwright.design.SitePinInst;
 import com.xilinx.rapidwright.edif.EDIFHierCellInst;
@@ -175,6 +176,8 @@ public class TestECOTools {
         EDIFNetlist netlist = design.getNetlist();
         Map<Net, Set<SitePinInst>> deferredRemovals = new HashMap<>();
 
+        DesignTools.updatePinsIsRouted(design);
+
         // Disconnect the ILA inputs
         List<EDIFHierPortInst> disconnectPins = new ArrayList<>();
         for (int i = 0; i < 14; i++) {
@@ -202,6 +205,7 @@ public class TestECOTools {
         Assertions.assertEquals(0, deferredRemovals.size());
 
         // Check that leaves of net and pin are one and the same now
+        List<SitePinInst> unroutedPins = new ArrayList<>();
         for (Map.Entry<EDIFHierNet, List<EDIFHierPortInst>> e : netToPortInsts.entrySet()) {
             EDIFHierNet ehn = e.getKey();
             List<EDIFHierPortInst> ehnLeaves = ehn.getLeafHierPortInsts(false, true);
@@ -209,7 +213,18 @@ public class TestECOTools {
                 List<EDIFHierPortInst> ehpiLeaves = ehpi.getInternalNet().getLeafHierPortInsts(false, true);
                 CollectionUtils.isEqualCollection(ehnLeaves, ehpiLeaves);
             }
+
+            EDIFHierNet parentEhn = netlist.getParentNet(ehn);
+            Net parentNet = design.getNet(parentEhn.getHierarchicalNetName());
+            for (SitePinInst spi : parentNet.getPins()) {
+                if (!spi.isOutPin() && !spi.isRouted()) {
+                    unroutedPins.add(spi);
+                }
+            }
         }
+
+        Assertions.assertEquals("[IN SLICE_X51Y84.G_I, IN SLICE_X49Y84.EX, IN SLICE_X49Y87.EX, IN SLICE_X51Y84.H_I, IN SLICE_X49Y86.FX, IN SLICE_X49Y86.E_I, IN SLICE_X49Y88.EX, IN SLICE_X50Y82.EX, IN SLICE_X49Y86.EX, IN SLICE_X49Y84.F_I, IN SLICE_X49Y85.EX, IN SLICE_X50Y84.EX, IN SLICE_X49Y84.FX, IN SLICE_X49Y84.E_I]",
+                unroutedPins.toString());
 
         if (FileTools.isVivadoOnPath()) {
             // Check that Vivado shows 14 unrouted nets
