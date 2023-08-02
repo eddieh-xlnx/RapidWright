@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Future;
+import java.util.function.Predicate;
 
 import com.xilinx.rapidwright.util.NoCloseOutputStream;
 import com.xilinx.rapidwright.util.ParallelDCPInput;
@@ -252,20 +253,37 @@ public class EDIFLibrary extends EDIFName {
      * @param stable makes sure that the list is always the same for the same input
      * @return The ordered list.
      */
-    public List<EDIFCell> getValidCellExportOrder(boolean stable) {
+    public static List<EDIFCell> getValidCellExportOrder(Set<EDIFCell> cells, boolean stable) {
+        Predicate<EDIFCell> recurseIf = cells::contains;
+        return getValidCellExportOrder(cells, stable, recurseIf);
+    }
+
+    private static List<EDIFCell> getValidCellExportOrder(Collection<EDIFCell> cells, boolean stable, Predicate<EDIFCell> recurseIf) {
         List<EDIFCell> visited = new ArrayList<>();
-        Iterable<EDIFCell> cells;
+        Iterable<EDIFCell> cellIterable;
         if (stable) {
-            cells = getCells().stream().sorted(Comparator.comparing(EDIFName::getName))::iterator;
+            cellIterable = cells.stream().sorted(Comparator.comparing(EDIFName::getName))::iterator;
         } else {
-            cells = getCells();
+            cellIterable = cells;
         }
         Set<EDIFCell> visitedSet = new HashSet<>();
-        for (EDIFCell cell : cells) {
-            visit(cell, visited, visitedSet, stable);
+        for (EDIFCell cell : cellIterable) {
+            visit(cell, visited, visitedSet, stable, recurseIf);
         }
 
         return visited;
+    }
+
+    /**
+     * Creates an ordered list of cells such that each cell that appears
+     * in the list only references cells that have already been seen in
+     * the list. This is a requirement when exporting the EDIF to a file.
+     * @param stable makes sure that the list is always the same for the same input
+     * @return The ordered list.
+     */
+    public List<EDIFCell> getValidCellExportOrder(boolean stable) {
+        Predicate<EDIFCell> recurseIf = (c) -> c.getLibrary() == this;
+        return getValidCellExportOrder(getCells(), stable, recurseIf);
     }
 
     /**
@@ -286,7 +304,7 @@ public class EDIFLibrary extends EDIFName {
         return getName().equals(EDIFTools.EDIF_LIBRARY_HDI_PRIMITIVES_NAME);
     }
 
-    private void visit(EDIFCell cell, List<EDIFCell> visitedList, Set<EDIFCell> visitedSet, boolean stable) {
+    private static void visit(EDIFCell cell, List<EDIFCell> visitedList, Set<EDIFCell> visitedSet, boolean stable, Predicate<EDIFCell> recurseIf) {
         if (!visitedSet.add(cell)) {
             return;
         }
@@ -298,8 +316,8 @@ public class EDIFLibrary extends EDIFName {
         }
         for (EDIFCellInst i : cellInsts) {
             EDIFCell childCell = i.getCellType();
-            if (childCell.getLibrary() == this) {
-                visit(childCell,visitedList,visitedSet, stable);
+            if (recurseIf.test(childCell)) {
+                visit(childCell, visitedList, visitedSet, stable, recurseIf);
             }
         }
         visitedList.add(cell);
