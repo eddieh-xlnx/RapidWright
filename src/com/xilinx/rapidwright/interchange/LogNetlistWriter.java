@@ -302,10 +302,14 @@ public class LogNetlistWriter {
     }
 
     protected void writeAllStringsToNetlistBuilder(Netlist.Builder netlist) {
-        int stringCount = allStrings.size();
+        writeStrings(netlist, allStrings);
+    }
+
+    public static void writeStrings(Netlist.Builder netlist, StringEnumerator strings) {
+        int stringCount = strings.size();
         TextList.Builder strList = netlist.initStrList(stringCount);
         for (int i=0; i < stringCount; i++) {
-            strList.set(i, new Text.Reader(allStrings.get(i)));
+            strList.set(i, new Text.Reader(strings.get(i)));
         }
     }
 
