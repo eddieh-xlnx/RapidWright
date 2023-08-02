@@ -1402,18 +1402,14 @@ public class DesignTools {
         // Remove Physical Cell
         design.removeCell(cell);
 
-        // Remove Logical Cell, if one exists
-        // (it may have been removed already)
-        EDIFCellInst eci = cell.getEDIFCellInst();
-        if (eci != null) {
-            for (EDIFPortInst portInst : eci.getPortInsts()) {
-                EDIFNet en = portInst.getNet();
-                if (en != null) {
-                    en.removePortInst(portInst);
-                }
+        // Remove Logical Cell
+        for (EDIFPortInst portInst : cell.getEDIFCellInst().getPortInsts()) {
+            EDIFNet en = portInst.getNet();
+            if (en != null) {
+                en.removePortInst(portInst);
             }
-            cell.getParentCell().removeCellInst(eci);
         }
+        cell.getParentCell().removeCellInst(cell.getEDIFCellInst());
     }
 
     /**

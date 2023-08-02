@@ -673,14 +673,16 @@ public class ECOTools {
                     throw new RuntimeException("ERROR: Cannot find physical cell corresponding to logical cell '" +
                             leafEhci.getFullHierarchicalInstName() + "'.");
                 }
-                DesignTools.fullyRemoveCell(design, physCell, deferredRemovals);
-            }
 
-            if (!eci.getCellType().isLeafCellOrBlackBox()) {
-                // Remove cell instance from parent cell
-                EDIFCell parentCell = ehci.getParent().getCellType();
-                parentCell.removeCellInst(eci);
+                DesignTools.fullyUnplaceCell(physCell, deferredRemovals);
+                design.removeCell(physCell);
             }
+        }
+
+        for (EDIFHierCellInst ehci : cells) {
+            // Remove cell instance from parent cell
+            EDIFCell parentCell = ehci.getParent().getCellType();
+            parentCell.removeCellInst(ehci.getInst());
         }
     }
 
