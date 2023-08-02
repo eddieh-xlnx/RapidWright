@@ -659,7 +659,10 @@ public class ECOTools {
             // Disconnect hierarchical cell from connected nets
             EDIFCellInst eci = ehci.getInst();
             for (EDIFPortInst ehpi : eci.getPortInsts()) {
-                ehpi.getNet().removePortInst(ehpi);
+                EDIFNet en = ehpi.getNet();
+                if (en != null) {
+                    en.removePortInst(ehpi);
+                }
             }
 
             // Remove all leaf cells from physical design
