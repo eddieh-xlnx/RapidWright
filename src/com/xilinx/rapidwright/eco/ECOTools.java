@@ -731,7 +731,12 @@ public class ECOTools {
             // Modify physical netlist
             EDIFHierCellInst ehci = parentEhci.getChild(eci);
             for (EDIFHierCellInst leaf : netlist.getAllLeafDescendants(ehci)) {
-                design.createCell(leaf.getFullHierarchicalInstName(), leaf.getInst());
+                EDIFCell leafCell = leaf.getCellType();
+                String leafCellName = leaf.getCellName();
+                if (leafCellName.equals("VCC") || leafCellName.equals("GND")) {
+                    continue;
+                }
+                design.addCell(new Cell(leaf.getFullHierarchicalInstName()));
             }
         }
     }
