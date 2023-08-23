@@ -1809,6 +1809,8 @@ public class DesignTools {
             }
         }
 
+        batchRemoveSitePins(pinsToRemove, true);
+
         // Rename nets if source was removed
         Set<String> netsToKeep = new HashSet<>();
         for (Entry<Net, String> e : netsToUpdate.entrySet()) {
@@ -1829,8 +1831,6 @@ public class DesignTools {
                 siteInstsToRemove.add(siteInst);
             }
         }
-
-        batchRemoveSitePins(pinsToRemove, true);
 
         for (SiteInst siteInst : siteInstsToRemove) {
             d.removeSiteInst(siteInst);
