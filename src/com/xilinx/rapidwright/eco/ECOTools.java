@@ -189,7 +189,6 @@ public class ECOTools {
             List<EDIFHierPortInst> portInsts = e.getValue();
             portInsts.sort((p1, p2) -> -Boolean.compare(p1.isOutput(), p2.isOutput()));
 
-            // Modify the logical netlist
             for (EDIFHierPortInst ehpi : portInsts) {
                 if (ehpi.isOutput()) {
                     for (EDIFHierPortInst src : ehn.getLeafHierPortInsts(true, false)) {
@@ -345,41 +344,56 @@ public class ECOTools {
                 SiteInst si = cell.getSiteInst();
 
                 if (ehpi.isOutput()) {
+                    // Connecting an output pin to a net
+
+                    // Pre-emptively remove any existing sources on the new physical
+                    // net immediately, as opposed to deferring it for later
+                    deferredRemovals.computeIfPresent(newPhysNet, (k, v) -> {
+                        v.remove(k.getSource());
+                        v.remove(k.getAlternateSource());
+                        return v.isEmpty() ? null : v;
+                    });
+                    fullyUnrouteSources(newPhysNet);
+
                     if (!sitePins.isEmpty()) {
+                        // This net's leaf pins already has some site pins
                         for (SitePinInst spi : sitePins) {
+                            assert(spi.isOutPin());
+
                             Net oldPhysNet = spi.getNet();
-                            if (oldPhysNet != null && !oldPhysNet.equals(newPhysNet)) {
-                                deferredRemovals.computeIfPresent(oldPhysNet, ($, v) -> {
+                            if (newPhysNet.equals(oldPhysNet)) {
+                                // Site pin already on new net
+                                continue;
+                            }
+                            if (oldPhysNet != null) {
+                                // Site pin is attached to a different physical net, move them over to the new net
+                                // (erasing them from deferredRemovals if present)
+                                deferredRemovals.computeIfPresent(oldPhysNet, (k, v) -> {
                                     v.remove(spi);
                                     return v.isEmpty() ? null : v;
                                 });
                                 fullyUnrouteSources(oldPhysNet);
                             }
-                            if (oldPhysNet == null || !oldPhysNet.equals(newPhysNet)) {
-                                deferredRemovals.computeIfPresent(newPhysNet, (k, v) -> {
-                                    v.remove(k.getSource());
-                                    return v.isEmpty() ? null : v;
-                                });
-                                fullyUnrouteSources(newPhysNet);
-                                Pair<SiteInst, BELPin> siteInstBelPin = ehpi.getRoutedBELPin(design);
-                                assert(siteInstBelPin.getFirst() == si);
-                                assert(spi.getSiteInst() == null);
-                                spi.setSiteInst(si);
-                                newPhysNet.addPin(spi);
-                                si.routeIntraSiteNet(newPhysNet, siteInstBelPin.getSecond(), spi.getBELPin());
-                            }
+
+                            // Add existing site pin to new net, and update intra-site routing
+                            Pair<SiteInst, BELPin> siteInstBelPin = ehpi.getRoutedBELPin(design);
+                            assert(siteInstBelPin.getFirst() == si);
+                            assert(spi.getSiteInst() == null);
+                            spi.setSiteInst(si);
+                            newPhysNet.addPin(spi);
+                            si.routeIntraSiteNet(newPhysNet, siteInstBelPin.getSecond(), spi.getBELPin());
                         }
                     } else {
-                        deferredRemovals.computeIfPresent(newPhysNet, (k, v) -> {
-                            v.remove(k.getSource());
-                            return v.isEmpty() ? null : v;
-                        });
-                        fullyUnrouteSources(newPhysNet);
-                        // Need intra-site routing to get out of site
+                        // Create and add a new SitePinInst to new net, including
+                        // updating any intra-site routing necessary to get out of site
                         createExitSitePinInst(design, ehpi, newPhysNet);
                     }
                 } else {
+                    // Connecting an input pin to a net
+
                     if (!sitePins.isEmpty()) {
+                        // This net's leaf pins already has some site pins
+                        // Find those site pins and move them onto the new net
                         String logicalPinName = ehpi.getPortInst().getName();
                         BEL bel = cell.getBEL();
                         for (String physicalPinName : cell.getAllPhysicalPinMappings(logicalPinName)) {
@@ -412,7 +426,7 @@ public class ECOTools {
                             }
 
                             Net oldPhysNet = spi.getNet();
-                            deferredRemovals.computeIfPresent(oldPhysNet, ($, v) -> {
+                            deferredRemovals.computeIfPresent(oldPhysNet, (k, v) -> {
                                 v.remove(spi);
                                 return v.isEmpty() ? null : v;
                             });
@@ -448,7 +462,7 @@ public class ECOTools {
                             continue;
                         }
 
-                        // Otherwise create a site-pin so inter-site routing can occur
+                        // Otherwise create and attach a new site-pin
                         String logicalPinName = ehpi.getPortInst().getName();
                         if (cell.getAllPhysicalPinMappings(logicalPinName) != null) {
                             SitePinInst spi = createExitSitePinInst(design, ehpi, newPhysNet);
@@ -456,11 +470,12 @@ public class ECOTools {
                                 throw new RuntimeException("ERROR: Unable to route pin '" + ehpi + "' out of site " + si.getSiteName() + ".");
                             }
 
-                            BELPin snkBp = cell.getBELPin(ehpi);
-                            if (!si.routeIntraSiteNet(newPhysNet, spi.getBELPin(), snkBp)) {
-                                throw new RuntimeException("ERROR: Failed to route intra-site connection " +
-                                        spi.getSiteInst().getSiteName() + "/" + spi.getBELPin() + " to " + snkBp + ".");
-                            }
+                            // TODO: Is this really necessary since createExitSitePinInst should handle this?
+                            // BELPin snkBp = cell.getBELPin(ehpi);
+                            // if (!si.routeIntraSiteNet(newPhysNet, spi.getBELPin(), snkBp)) {
+                            //     throw new RuntimeException("ERROR: Failed to route intra-site connection " +
+                            //             spi.getSiteInst().getSiteName() + "/" + spi.getBELPin() + " to " + snkBp + ".");
+                            // }
                         }
                     }
                 }
@@ -731,7 +746,6 @@ public class ECOTools {
             // Modify physical netlist
             EDIFHierCellInst ehci = parentEhci.getChild(eci);
             for (EDIFHierCellInst leaf : netlist.getAllLeafDescendants(ehci)) {
-                EDIFCell leafCell = leaf.getCellType();
                 String leafCellName = leaf.getCellName();
                 if (leafCellName.equals("VCC") || leafCellName.equals("GND")) {
                     continue;
