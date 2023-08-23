@@ -40,6 +40,7 @@ import com.xilinx.rapidwright.edif.EDIFHierNet;
 import com.xilinx.rapidwright.edif.EDIFHierPortInst;
 import com.xilinx.rapidwright.edif.EDIFNet;
 import com.xilinx.rapidwright.edif.EDIFNetlist;
+import com.xilinx.rapidwright.edif.EDIFPort;
 import com.xilinx.rapidwright.edif.EDIFPortInst;
 import com.xilinx.rapidwright.edif.EDIFTools;
 import com.xilinx.rapidwright.rwroute.RouterHelper;
@@ -47,7 +48,9 @@ import com.xilinx.rapidwright.util.Pair;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -159,6 +162,57 @@ public class ECOTools {
             // typically we would want to connect it to another net
             en.removePortInst(ehpi.getPortInst());
         }
+    }
+
+    /**
+     * Given a list of String-s with one more space-separated pins, disconnect these pins from
+     * their current nets.
+     * This method modifies the EDIF (logical) netlist as well as the place-and-route (physical)
+     * state, and is modelled on Vivado's <TT>disconnect_net -pinlist</TT> command.
+     * @param design The design where the pin(s) are instantiated.
+     * @param pins A list of hierarchical pins for disconnection.
+     * @param deferredRemovals An optional map that, if passed in non-null will be populated with
+     *                         site pins marked for removal.  The map allows for persistent tracking
+     *                         if this method is called many times as the process is expensive
+     *                         without batching.  This map can also allow SitePinInst objects to be
+     *                         reused by {@link #connectNet(Design, Map, Map)}.
+     */
+    public static void disconnectNetPath(Design design,
+                                         List<String> pins,
+                                         Map<Net, Set<SitePinInst>> deferredRemovals) {
+        final EDIFNetlist netlist = design.getNetlist();
+        List<EDIFHierPortInst> pinObjects = new ArrayList<>(pins.size());
+        for (String entry : pins) {
+            for (String pin : entry.split(" ")) {
+                EDIFHierPortInst ehpi = netlist.getHierPortInstFromName(pin);
+                if (ehpi == null) {
+                    int pos = pin.lastIndexOf(EDIFTools.EDIF_HIER_SEP);
+                    String path = pin.substring(0, pos);
+                    EDIFHierCellInst ehci = netlist.getHierCellInstFromName(path);
+                    if (ehci == null) {
+                        throw new RuntimeException("ERROR: Unable to find inst '" + path + "' corresponding to pin '" + pin + "'");
+                    }
+                    String name = pin.substring(pos + 1);
+                    EDIFPort ep = ehci.getCellType().getPort(name);
+                    if (ep == null) {
+                        throw new RuntimeException("ERROR: Unable to find port '" + name + "' on inst '" + path + "' corresponding to pin '" + pin + "'");
+                    }
+
+                    // Cell inst exists, as does the port on its cell type, but port inst
+                    // does not because it is not connected to anything. Nothing to be done.
+                    continue;
+                }
+
+                EDIFNet en = ehpi.getNet();
+                if (en == null) {
+                    System.err.println("WARNING: Pin '" + ehpi + "' is not connected to a net.");
+                    throw new RuntimeException(pin);
+                }
+
+                pinObjects.add(ehpi);
+            }
+        }
+        disconnectNet(design, pinObjects, deferredRemovals);
     }
 
     /**
@@ -415,7 +469,7 @@ public class ECOTools {
                                     String message = "Site pin " + spi.getSitePinName() + " cannot be used " +
                                             "to connect to logical pin '" + ehpi + "' since it is also connected to pin '" +
                                             otherEhpi + "'.";
-                                    String warnIfCellInstStartsWith = System.getProperty("rapidwright.ecotools.warnIfCellInstStartsWith");
+                                    String warnIfCellInstStartsWith = System.getProperty("rapidwright.ecotools.connectNet.warnIfCellInstStartsWith");
                                     String cellInstName = (warnIfCellInstStartsWith != null) ? otherEhpi.getPortInst().getCellInst().getName() : null;
                                     if (cellInstName != null && cellInstName.startsWith(warnIfCellInstStartsWith)) {
                                         System.err.println("WARNING: " + message);
@@ -481,6 +535,59 @@ public class ECOTools {
                 }
             }
         }
+    }
+
+    /**
+     * Given a list of String-s containing one net path followed by one or more pin paths
+     * (separated by spaces) connect the latter pins to the former net.
+     * This method modifies the EDIF (logical) netlist as well as the place-and-route (physical)
+     * state, and is modelled on Vivado's <TT>connect_net -hier -net_object_list</TT> command.
+     * @param design The design where the net(s) and pin(s) are instantiated.
+     * @param netPinList A list of String-s containing net and pin paths.
+     * @param deferredRemovals An optional map that, if passed in non-null will allow any SitePinInst
+     *                         objects deferred previously for removal to be reused for new connections.
+     *                         See {@link #disconnectNet(Design, List, Map)}.
+     */
+    public static void connectNet(Design design,
+                                  List<String> netPinList,
+                                  Map<Net, Set<SitePinInst>> deferredRemovals) {
+        final EDIFNetlist netlist = design.getNetlist();
+        final Map<EDIFHierNet, List<EDIFHierPortInst>> netPortInsts = new HashMap<>(netPinList.size());
+        for (String i : netPinList) {
+            String[] net_pins = i.split(" ", 2);
+            String net = net_pins[0];
+            if (net.isEmpty()) {
+                System.err.println("WARNING: Empty net specified for connection to pins: " + net_pins[1]);
+                continue;
+            }
+            EDIFHierNet ehn = netlist.getHierNetFromName(net);
+            if (ehn == null) throw new RuntimeException(net);
+
+            String[] pins = net_pins[1].split("[{} ]+");
+            List<EDIFHierPortInst> portInsts = netPortInsts.computeIfAbsent(ehn, (n) -> new ArrayList<>(pins.length));
+            for (String pin : pins) {
+                if (pin.isEmpty()) {
+                    continue;
+                }
+
+                EDIFHierPortInst ehpi = netlist.getHierPortInstFromName(pin);
+                if (ehpi == null) {
+                    // No pin exists currently; create and attach one to its port
+                    int pos = pin.lastIndexOf(EDIFTools.EDIF_HIER_SEP);
+                    String path = pin.substring(0, pos);
+                    String name = pin.substring(pos+1);
+                    EDIFHierCellInst ehci = netlist.getHierCellInstFromName(path);
+                    if (ehci == null) throw new RuntimeException(pin);
+                    EDIFCell cell = ehci.getCellType();
+                    EDIFPort ep = cell.getPort(name);
+                    if (ep == null) throw new RuntimeException(pin);
+                    EDIFPortInst epi = new EDIFPortInst(ep, null, ehci.getInst());
+                    ehpi = new EDIFHierPortInst(ehci.getParent(), epi);
+                }
+                portInsts.add(ehpi);
+            }
+        }
+        connectNet(design, netPortInsts, deferredRemovals);
     }
 
     /**
@@ -612,7 +719,7 @@ public class ECOTools {
                     // Unroute SitePIP
                     BELPin cellBp = cell.getBELPin(ehpi);
                     if (!si.unrouteIntraSiteNet(inputBp, cellBp)) {
-                        throw new RuntimeException("Failed to unroute intra-site connection " +
+                        throw new RuntimeException("ERROR: Failed to unroute intra-site connection " +
                                 si.getSiteName() + "/" + inputBp + " to " + cellBp);
                     }
 
@@ -655,22 +762,22 @@ public class ECOTools {
     }
 
     /**
-     * Given a list of EDIFHierCellInst objects, remove these cells from the design.
+     * Given a list of EDIFHierCellInst objects, remove these cell instances from the design.
      * This method removes and disconnects cells from the EDIF (logical) netlist
      * as well as the place-and-route (physical) state, and is modelled on Vivado's
      * <TT>remove_cell</TT> command.
      * @param design The current design.
-     * @param cells A list of hierarchical cell instances for removal.
+     * @param insts A list of hierarchical cell instances for removal.
      * @param deferredRemovals An optional map that, if passed in non-null will be populated with
      *                         site pins marked for removal.  The map allows for persistent tracking
      *                         if this method is called many times as the process is expensive
      *                         without batching.
      */
     public static void removeCell(Design design,
-                                  List<EDIFHierCellInst> cells,
+                                  List<EDIFHierCellInst> insts,
                                   Map<Net, Set<SitePinInst>> deferredRemovals) {
         final EDIFNetlist netlist = design.getNetlist();
-        for (EDIFHierCellInst ehci : cells) {
+        for (EDIFHierCellInst ehci : insts) {
             // Disconnect hierarchical cell from connected nets
             EDIFCellInst eci = ehci.getInst();
             for (EDIFPortInst ehpi : eci.getPortInsts()) {
@@ -697,11 +804,39 @@ public class ECOTools {
             }
         }
 
-        for (EDIFHierCellInst ehci : cells) {
+        for (EDIFHierCellInst ehci : insts) {
             // Remove cell instance from parent cell
             EDIFCell parentCell = ehci.getParent().getCellType();
             parentCell.removeCellInst(ehci.getInst());
         }
+    }
+
+    /**
+     * Given a list of String-s containing the hierarchical path to cell instances,
+     * remove these instances from the design.
+     * This method removes and disconnects cells from the EDIF (logical) netlist
+     * as well as the place-and-route (physical) state, and is modelled on Vivado's
+     * <TT>remove_cell</TT> command.
+     * @param design The current design.
+     * @param paths A list of instance paths for removal.
+     * @param deferredRemovals An optional map that, if passed in non-null will be populated with
+     *                         site pins marked for removal.  The map allows for persistent tracking
+     *                         if this method is called many times as the process is expensive
+     *                         without batching.
+     */
+    public static void removeCellPath(Design design,
+                                      List<String> paths,
+                                      Map<Net, Set<SitePinInst>> deferredRemovals) {
+        final EDIFNetlist netlist = design.getNetlist();
+        List<EDIFHierCellInst> edifCellInsts = new ArrayList<>(paths.size());
+        for (String instName : paths) {
+            EDIFHierCellInst ehci = netlist.getHierCellInstFromName(instName);
+            if (ehci == null) {
+                throw new RuntimeException("ERROR: Cannot find cell '" + instName + '"');
+            }
+            edifCellInsts.add(ehci);
+        }
+        removeCell(design, edifCellInsts, deferredRemovals);
     }
 
     private static Pair<EDIFHierCellInst,String> getParentCellInstAndName(EDIFNetlist netlist, String path)
