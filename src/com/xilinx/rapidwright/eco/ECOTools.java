@@ -524,12 +524,11 @@ public class ECOTools {
                                 throw new RuntimeException("ERROR: Unable to route pin '" + ehpi + "' out of site " + si.getSiteName() + ".");
                             }
 
-                            // TODO: Is this really necessary since createExitSitePinInst should handle this?
-                            // BELPin snkBp = cell.getBELPin(ehpi);
-                            // if (!si.routeIntraSiteNet(newPhysNet, spi.getBELPin(), snkBp)) {
-                            //     throw new RuntimeException("ERROR: Failed to route intra-site connection " +
-                            //             spi.getSiteInst().getSiteName() + "/" + spi.getBELPin() + " to " + snkBp + ".");
-                            // }
+                            BELPin snkBp = cell.getBELPin(ehpi);
+                            if (!si.routeIntraSiteNet(newPhysNet, spi.getBELPin(), snkBp)) {
+                                throw new RuntimeException("ERROR: Failed to route intra-site connection " +
+                                        spi.getSiteInst().getSiteName() + "/" + spi.getBELPin() + " to " + snkBp + ".");
+                            }
                         }
                     }
                 }
