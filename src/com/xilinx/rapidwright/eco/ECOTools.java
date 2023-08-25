@@ -519,16 +519,7 @@ public class ECOTools {
                         // Otherwise create and attach a new site-pin
                         String logicalPinName = ehpi.getPortInst().getName();
                         if (cell.getAllPhysicalPinMappings(logicalPinName) != null) {
-                            SitePinInst spi = createExitSitePinInst(design, ehpi, newPhysNet);
-                            if (spi == null) {
-                                throw new RuntimeException("ERROR: Unable to route pin '" + ehpi + "' out of site " + si.getSiteName() + ".");
-                            }
-
-                            BELPin snkBp = cell.getBELPin(ehpi);
-                            if (!si.routeIntraSiteNet(newPhysNet, spi.getBELPin(), snkBp)) {
-                                throw new RuntimeException("ERROR: Failed to route intra-site connection " +
-                                        spi.getSiteInst().getSiteName() + "/" + spi.getBELPin() + " to " + snkBp + ".");
-                            }
+                            createExitSitePinInst(design, ehpi, newPhysNet);
                         }
                     }
                 }
@@ -688,6 +679,7 @@ public class ECOTools {
         }
 
         Cell cell = ehpi.getPhysicalCell(design);
+        BELPin cellBp = cell.getBELPin(ehpi);
         SiteInst si = cell.getSiteInst();
         String logicalPinName = ehpi.getPortInst().getName();
         List<String> siteWires = new ArrayList<>();
@@ -716,7 +708,6 @@ public class ECOTools {
                     Net inputBpNet = si.getNetFromSiteWire(inputBp.getSiteWireName());
 
                     // Unroute SitePIP
-                    BELPin cellBp = cell.getBELPin(ehpi);
                     if (!si.unrouteIntraSiteNet(inputBp, cellBp)) {
                         throw new RuntimeException("ERROR: Failed to unroute intra-site connection " +
                                 si.getSiteName() + "/" + inputBp + " to " + cellBp);
@@ -734,15 +725,31 @@ public class ECOTools {
             }
         }
 
+        SitePinInst spi = null;
         for (String sitePinName : sitePinNames) {
             Net siteWireNet = si.getNetFromSiteWire(sitePinName);
             if (siteWireNet == null) {
                 // Site Pin not currently used
-                return net.createPin(sitePinName, si);
+                spi = net.createPin(sitePinName, si);
+                break;
             }
         }
 
-        throw new RuntimeException("ERROR: Unable to route pin '" + ehpi + "' out of site " + si.getSiteName() + ".");
+        if (spi == null) {
+            throw new RuntimeException("ERROR: Unable to route pin '" + ehpi + "' out of site " + si.getSiteName() + ".");
+        }
+
+        BELPin snkBp = cell.getBELPin(ehpi);
+        if (!si.unrouteIntraSiteNet(spi.getBELPin(), snkBp)) {
+            throw new RuntimeException("ERROR: Failed to unroute intra-site connection " +
+                    spi.getSiteInst().getSiteName() + "/" + spi.getBELPin() + " to " + snkBp + ".");
+        }
+        if (!si.routeIntraSiteNet(net, spi.getBELPin(), snkBp)) {
+            throw new RuntimeException("ERROR: Failed to route intra-site connection " +
+                    spi.getSiteInst().getSiteName() + "/" + spi.getBELPin() + " to " + snkBp + ".");
+        }
+
+        return spi;
     }
 
     // Unroute both primary and alternate site pin sources on a net, should they exist,
