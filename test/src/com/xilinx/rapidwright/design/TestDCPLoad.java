@@ -30,7 +30,6 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -59,15 +58,12 @@ public class TestDCPLoad {
     }
 
     @Test
-    public void checkAutoEDIFGenerationFailure(@TempDir Path tempDir) throws IOException {
+    public void checkAutoEDIFGenerationFailure() {
         Path dcpPath = RapidWrightDCP.getPath("picoblaze_ooc_X10Y235_unreadable_edif.dcp");
-
-        // Soft link DCP from a temporary directory to prevent parallel testing issues
-        Path tmpPath = Files.createSymbolicLink(tempDir.resolve(dcpPath.getFileName()), dcpPath);
 
         Design.setAutoGenerateReadableEdif (false);
         Assertions.assertThrows(RuntimeException.class, () -> {
-            Design.readCheckpoint(tmpPath, CodePerfTracker.SILENT);
+            Design.readCheckpoint(dcpPath, CodePerfTracker.SILENT);
         });
     }
 
@@ -82,21 +78,18 @@ public class TestDCPLoad {
     }
 
     @Test
-    public void checkAutoEDIFGenerationWithVivado(@TempDir Path tempDir) throws IOException {
+    public void checkAutoEDIFGenerationWithVivado() throws IOException {
         // This test won't run in GH as Vivado is not available
         Assumptions.assumeTrue(FileTools.isVivadoOnPath());
 
         Path dcpPath = RapidWrightDCP.getPath("picoblaze_ooc_X10Y235_unreadable_edif.dcp");
 
-        // Soft link DCP from a temporary directory to prevent parallel testing issues
-        Path tmpPath = Files.createSymbolicLink(tempDir.resolve(dcpPath.getFileName()), dcpPath);
-
-        Path readableEDIFDir = DesignTools.getDefaultReadableEDIFDir(tmpPath);
-        Path readableEDIF = DesignTools.getEDFAutoGenFilePath(tmpPath, readableEDIFDir);
+        Path readableEDIFDir = DesignTools.getDefaultReadableEDIFDir(dcpPath);
+        Path readableEDIF = DesignTools.getEDFAutoGenFilePath(dcpPath, readableEDIFDir);
         FileTools.deleteFile(readableEDIF.toString());
 
         Design.setAutoGenerateReadableEdif (true);
-        Design.readCheckpoint(tmpPath, CodePerfTracker.SILENT);
+        Design.readCheckpoint(dcpPath, CodePerfTracker.SILENT);
     }
 
     @Test
