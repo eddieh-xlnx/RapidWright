@@ -400,15 +400,6 @@ public class ECOTools {
                 if (ehpi.isOutput()) {
                     // Connecting an output pin to a net
 
-                    // Pre-emptively remove any existing sources on the new physical
-                    // net immediately, as opposed to deferring it for later
-                    deferredRemovals.computeIfPresent(newPhysNet, (k, v) -> {
-                        v.remove(k.getSource());
-                        v.remove(k.getAlternateSource());
-                        return v.isEmpty() ? null : v;
-                    });
-                    fullyUnrouteSources(newPhysNet);
-
                     if (!sitePins.isEmpty()) {
                         // This net's leaf pins already has some site pins
                         for (SitePinInst spi : sitePins) {
@@ -419,6 +410,7 @@ public class ECOTools {
                                 // Site pin already on new net
                                 continue;
                             }
+
                             if (oldPhysNet != null) {
                                 // Site pin is attached to a different physical net, move them over to the new net
                                 // (erasing them from deferredRemovals if present)
@@ -429,6 +421,13 @@ public class ECOTools {
                                 fullyUnrouteSources(oldPhysNet);
                             }
 
+                            deferredRemovals.computeIfPresent(newPhysNet, (k, v) -> {
+                                v.remove(k.getSource());
+                                v.remove(k.getAlternateSource());
+                                return v.isEmpty() ? null : v;
+                            });
+                            fullyUnrouteSources(newPhysNet);
+
                             // Add existing site pin to new net, and update intra-site routing
                             Pair<SiteInst, BELPin> siteInstBelPin = ehpi.getRoutedBELPin(design);
                             assert(siteInstBelPin.getFirst() == si);
@@ -438,6 +437,13 @@ public class ECOTools {
                             si.routeIntraSiteNet(newPhysNet, siteInstBelPin.getSecond(), spi.getBELPin());
                         }
                     } else {
+                        deferredRemovals.computeIfPresent(newPhysNet, (k, v) -> {
+                            v.remove(k.getSource());
+                            v.remove(k.getAlternateSource());
+                            return v.isEmpty() ? null : v;
+                        });
+                        fullyUnrouteSources(newPhysNet);
+
                         // Create and add a new SitePinInst to new net, including
                         // updating any intra-site routing necessary to get out of site
                         createExitSitePinInst(design, ehpi, newPhysNet);
@@ -916,6 +922,7 @@ public class ECOTools {
             parentCell.createNet(netName);
 
             // Modify physical netlist
+            assert(design.getNet(path) == null);
             design.createNet(path);
         }
     }
