@@ -113,14 +113,20 @@ public class DesignComparator {
         for (Entry<String, Net> e : goldNetMap.entrySet()) {
             Net testNet = testNetMap.remove(e.getKey());
             if (testNet == null) {
-                addDiff(DesignDiffType.NET_MISSING, e.getValue(), null, gold, "");
+                Net goldNet = e.getValue();
+                if (goldNet.hasPIPs() || !goldNet.getSiteInsts().isEmpty()) {
+                    addDiff(DesignDiffType.NET_MISSING, goldNet, null, gold, "");
+                }
                 continue;
             }
             compareNets(e.getValue(), testNet);
         }
 
         for (Entry<String, Net> e : testNetMap.entrySet()) {
-            addDiff(DesignDiffType.NET_EXTRA, null, e.getValue(), test, "");
+            Net testNet = e.getValue();
+            if (testNet.hasPIPs() || !testNet.getSiteInsts().isEmpty()) {
+                addDiff(DesignDiffType.NET_EXTRA, null, testNet, test, "");
+            }
         }
 
         return getDiffCount();
