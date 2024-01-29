@@ -175,4 +175,20 @@ public class TestDesignComparator {
             compareDesign(25, 1, DesignDiffType.PIP_FLAGS, dc, gold, test2);
         }
     }
+
+    @Test
+    public void testDesignComparatorEmptyNets() {
+        Design gold = RapidWrightDCP.loadDCP("picoblaze_2022.2.dcp");
+        Design test = RapidWrightDCP.loadDCP("picoblaze_2022.2.dcp");
+
+        // It's possible that an (alias) net with no intra nor inter site routing exists;
+        // do not flag these as a diff
+        Net testNet = test.createNet("net_with_no_intra_nor_inter_site_routing");
+        Assertions.assertFalse(testNet.hasPIPs());
+        Assertions.assertTrue(testNet.getSiteInsts().isEmpty());
+
+        DesignComparator dc = new DesignComparator();
+        Assertions.assertEquals(0, dc.compareDesigns(gold, test));
+        Assertions.assertEquals(0, dc.compareDesigns(test, gold));
+    }
 }
